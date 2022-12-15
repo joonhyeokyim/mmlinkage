@@ -1,6 +1,8 @@
 import torch
 import numpy as np
 import networkx as nx
+import matplotlib.pyplot as plt
+from scipy.cluster.hierarchy import dendrogram, linkage
 import random
 
 class HccLinkage():
@@ -26,6 +28,9 @@ class HccLinkage():
         self.membership = torch.arange(self.n, dtype = torch.int)
         self.G = nx.Graph()
         self.G.add_nodes_from(range(self.n))
+        self.heights = torch.zeros(2 * self.n, dtype = torch.double)
+        self.Z = np.zeros((self.n - 1, 4))
+        self.fitted = False
         self.debug = False
 
     
@@ -61,6 +66,7 @@ class HccLinkage():
     def merge_clusters(self, k, l, distance):
         # print("added ", k, l)
         r = self.nextroots.pop(-1)
+        # print(r)
         new_size = self.S[k] + self.S[l]
         self.S[r] = new_size
         self.N[:, r] = self.N[:, k] + self.N[:, l]
@@ -82,15 +88,21 @@ class HccLinkage():
                 self.d_U[x,y] = distance
                 self.d_U[y,x] = distance
         # print("added ", k, l)
+        # self.set_of_clusters.remove(k)
+        # self.set_of_clusters.remove(l)
+        # self.set_of_clusters.add(r)
+        self.G.add_node(r)
+        # print("Node ", r, " added")
+        self.G.add_edge(r, k, length = distance - self.heights[k].item())
+        self.G.add_edge(r, l, length = distance - self.heights[l].item())
+        self.heights[r] = distance
+        self.Z[r - self.n] = np.array([k, l, distance, new_size.item()])
         for x in X:
             self.membership[x] = r
         for y in Y:
             self.membership[y] = r
         if self.debug:
             print(X, Y, distance.item())
-        # self.set_of_clusters.remove(k)
-        # self.set_of_clusters.remove(l)
-        # self.set_of_clusters.add(r)
 
 
     def learn_UM(self):
@@ -99,10 +111,42 @@ class HccLinkage():
         while(len(self.nextroots) > 1):
             i, j = E[t][0], E[t][1]
             self.update_matrices(i, j)
-            k, l = self.membership[i], self.membership[j]
+            k, l = self.membership[i].item(), self.membership[j].item()
             if(k != l and self.M[k,l] + self.M[l,k] == self.S[k] + self.S[l]):
-                self.merge_clusters(k, l, self.d[i,j])
+                self.merge_clusters(k, l, self.d[i,j].item())
                 # if(self.alt):
             # print(t)
             t += 1
+        self.fitted = True
+
+    # def draw_graph(self):
+    #     if self.fitted == False:
+    #         print("Warning: d_U is not obtained yet!\n")
+    #     else:
+    #         # pos = nx.spring_layout(self.G, weight = 'length')
+    #         nx.set_node_attributes(self.G, False, "touched")
+    #         V = []
+    #         V.append(2 * self.n - 2)
+    #         while len(V) > 0:
+    #             v = V.pop()
+    #             for w in self.G.adj[v]:
+    #                 if self.G.nodes[w]["touched"] == False:
+    #                     V.append(w)
+
+
+    #         pos=nx.get_node_attributes(self.G,'pos')
+    #         nx.draw(self.G, pos)
+    #         nx.draw_networkx_edge_labels(self.G, pos)
+    #         plt.show()
+
+    def draw_dendrogram(self, labels = None, figsize = (20,10)):
+        if self.fitted == False:
+            print("Warning: d_U is not obtained yet!\n")
+        else:
+            # if labels == None:
+            #     labels = range(self.n)
+            fig = plt.figure(figsize = figsize)
+            dn = dendrogram(self.Z, labels = labels)
+            plt.show()
+
 
